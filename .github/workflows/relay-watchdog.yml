@@ -1,0 +1,40 @@
+name: GBPCNY relay watchdog
+
+on:
+  schedule:
+    - cron: '37 */3 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Restart relay only when collector is genuinely idle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          runs="$(gh api "repos/$GH_REPO/actions/workflows/main.yml/runs?per_page=30")"
+          active="$(jq '[.workflow_runs[] | select(.status != "completed")] | length' <<<"$runs")"
+          if [ "$active" -gt 0 ]; then
+            echo "Collector already active or queued: no restart."
+            exit 0
+          fi
+          last_updated="$(jq -r '.workflow_runs[0].updated_at // empty' <<<"$runs")"
+          if [ -n "$last_updated" ]; then
+            last_epoch="$(date -u -d "$last_updated" +%s)"
+            now_epoch="$(date -u +%s)"
+            age="$((now_epoch-last_epoch))"
+            if [ "$age" -lt 1200 ]; then
+              echo "Collector ended $age seconds ago; allow dispatch to arrive."
+              exit 0
+            fi
+          fi
+          echo "Collector idle; dispatching recovery from last Formal Art checkpoint."
+          gh workflow run main.yml --ref main

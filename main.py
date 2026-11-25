@@ -18,6 +18,7 @@ from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 start=time.time()
 snapshot_initialized=False
+MAX_RUN_SECONDS=int(os.environ.get('GBPCNY_RUN_SECONDS', '20000'))
 
 
 def beijing_time():
@@ -104,11 +105,12 @@ def sendmail(receive_mail,title=None,sendtime=None):
 count=0
 timelist=[]
 
-while time.time()-start < 20000 :
+while time.time()-start < MAX_RUN_SECONDS :
     count+=1
+    got_quote=False
     try:
         time.sleep(4)
-        r = urlopen(url)
+        r = urlopen(url, timeout=20)
         c = r.read()
         bs_obj = bs(c,"html")
         t = bs_obj.find_all("table")[1]
@@ -127,6 +129,7 @@ while time.time()-start < 20000 :
                     df=pd.DataFrame(dict(zip([i.text for i in t.find_all('th')],[i.text for i in all_td])),index=['test'])
                 if all_td[-2].text not in df['发布日期'].values:
                     df=pd.concat([df,pd.DataFrame(dict(zip([i.text for i in t.find_all('th')],[i.text for i in all_td])),index=['test'])])
+                got_quote=True
                     
 #                 print( all_td[-2].text ,'len=',len(df),end='\t')               
 
@@ -135,6 +138,8 @@ while time.time()-start < 20000 :
     except Exception as E:
         print(134,E)
         pass;
+    if not got_quote or df is None:
+        continue
     
     df = df.apply(pd.to_numeric, errors='ignore')
     df=df.drop_duplicates(['发布日期'])
@@ -251,5 +256,9 @@ while time.time()-start < 20000 :
         break;
     else:continue;
 
+if df is None or df.empty:
+    raise RuntimeError('No valid price data: refusing to publish an empty checkpoint')
+# Persist all observations, not just the last periodic email snapshot.
+df.dropna(axis=1).to_csv('SEND.csv', index=False, encoding='utf16')
 sendmail("timfuall@gmail.com","《终止提醒》")
-print("while结束（20000秒），自动终止。")
+print("while结束（{}秒），自动终止。".format(MAX_RUN_SECONDS))
