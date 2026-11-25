@@ -1,0 +1,87 @@
+name: One-time GBPCNY historical recovery
+
+# No changes are made to the source AugustPounds repository.
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/import-history.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  import_history:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout GBPCNY only
+        uses: actions/checkout@v4
+
+      - name: Download pinned AugustPounds artifact (read-only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Try GitHub first. Cross-repository GITHUB_TOKEN access can be denied.
+          if gh api -H 'Accept: application/vnd.github+json' \
+              'repos/MidyJiang/AugustPounds/actions/artifacts/15001066111/zip' \
+              > /tmp/august-history.zip 2>/tmp/github-download-error.log && \
+              unzip -tq /tmp/august-history.zip >/dev/null 2>&1; then
+            echo "Downloaded original artifact directly from GitHub."
+          else
+            # Public-artifact read-only proxy, used ONLY to import one pinned snapshot.
+            # The downloaded bytes are SHA-256 verified before use.
+            curl -fLSs --retry 3 --connect-timeout 20 --max-time 180 \
+              'https://nightly.link/MidyJiang/AugustPounds/suites/123192204423/artifacts/15001066111' \
+              -o /tmp/august-history.zip
+            unzip -tq /tmp/august-history.zip
+            echo "Downloaded public artifact via nightly.link proxy."
+          fi
+
+      - name: Verify exact historical data and compress immutable seed
+        run: |
+          python - <<'PY'
+          import csv
+          import gzip
+          import hashlib
+          import io
+          import pathlib
+          import zipfile
+
+          EXPECTED = 'e351207ea8c87ddf0a4e4387dafbb6d91ec64656129a2439015404523f38de66'
+          with zipfile.ZipFile('/tmp/august-history.zip') as archive:
+              assert archive.namelist() == ['send.csv'], archive.namelist()
+              source = archive.read('send.csv')
+          actual = hashlib.sha256(source).hexdigest()
+          if actual != EXPECTED:
+              raise RuntimeError('Historical CSV SHA-256 mismatch: ' + actual)
+          rows = list(csv.DictReader(io.StringIO(source.decode('utf-16'))))
+          columns = ['货币名称','现汇买入价','现钞买入价','现汇卖出价','现钞卖出价','中行折算价','发布日期','发布时间']
+          if len(rows) != 82088 or list(rows[0]) != columns:
+              raise RuntimeError('Unexpected historical schema or row count')
+          times = [int(row['发布日期']) for row in rows]
+          if min(times) != 1690881156000000000:
+              raise RuntimeError('The 2023 history start timestamp is missing')
+          pathlib.Path('data').mkdir(exist_ok=True)
+          target = pathlib.Path('data/history_2023_2026.csv.gz')
+          target.write_bytes(gzip.compress(source, compresslevel=9, mtime=0))
+          print('Verified 82,088 rows from 2023; generated', target, target.stat().st_size, 'bytes')
+          PY
+
+      - name: Commit history ONLY to GBPCNY
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- data/history_2023_2026.csv.gz
+          if git diff --cached --quiet; then
+            echo "Already imported; no new commit."
+          else
+            git commit -m "Import verified AugustPounds 2023-2026 history snapshot"
+            git push origin HEAD:main
+          fi
