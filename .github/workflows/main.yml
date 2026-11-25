@@ -62,9 +62,19 @@ jobs:
           path: Formal Art
           if_no_artifact_found: fail
 
-      - name: Validate checkpoint
+      - name: Normalize and validate checkpoint filename
         run: |
-          test -s 'Formal Art/send.csv'
+          set -euo pipefail
+          # Uploaded artifact keeps the original uppercase SEND.csv filename.
+          # The Python loader deliberately reads lowercase Formal Art/send.csv.
+          if [ -s 'Formal Art/SEND.csv' ]; then
+            mv 'Formal Art/SEND.csv' 'Formal Art/send.csv'
+          fi
+          if [ ! -s 'Formal Art/send.csv' ]; then
+            echo "::error::Missing CSV in downloaded Formal Art artifact"
+            find 'Formal Art' -maxdepth 3 -type f -print || true
+            exit 1
+          fi
           echo "Recovered CSV:"
           wc -c 'Formal Art/send.csv'
 
