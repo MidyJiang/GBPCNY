@@ -76,6 +76,16 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r req.txt
 
+      - name: Audit historical restore before collecting
+        run: |
+          python - <<'PY'
+          from history_loader import load_historical_data
+          data, latest = load_historical_data()
+          assert len(data) >= 82088, "2023 history missing"
+          assert latest > 0, "latest rate invalid"
+          print("Historical bootstrap validated:", len(data), "records")
+          PY
+
       - name: Collect GBP/CNY and send existing email reminders
         env:
           QQ_MAIL_AUTH_CODE: ${{ secrets.QQ_MAIL_AUTH_CODE }}

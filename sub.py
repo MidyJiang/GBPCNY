@@ -32,19 +32,10 @@ url=r'https://www.boc.cn/sourcedb/whpj/'
 
 
 ###############################
-try:
-    df=pd.read_csv(r'Formal Art/send.csv',encoding='utf16')
-    # Find the last valid saved quote by issue time, not CSV row order.
-    ordered = df.copy()
-    ordered['_issue_time'] = pd.to_datetime(ordered['发布日期'], errors='coerce')
-    ordered['_rate'] = pd.to_numeric(ordered['现汇卖出价'], errors='coerce')
-    ordered = ordered.dropna(subset=['_issue_time', '_rate']).sort_values('_issue_time')
-    if not ordered.empty:
-        latest_price = float(ordered.iloc[-1]['_rate'])
-except FileNotFoundError:
-    # The new repository starts without a previous run's artifact.
-    print('No historical CSV; use first observed price as the baseline.')
-    df = None
+# Always merge verified 2023+ seed with this run's most recent checkpoint.
+# This restores full historical charts without modifying original CSV timestamps.
+from history_loader import load_historical_data
+df, latest_price = load_historical_data()
 
 #################################
 
