@@ -61,7 +61,7 @@ def sendmail(receive_mail,title=None,sendtime=None):
     send_usr = '782568799@qq.com'  # 发件人
     send_pwd = os.environ["QQ_MAIL_AUTH_CODE"]
     receive = receive_mail#'782568799@qq.com'  # 接收者
-    content = '发送于{}<p><a href="{}">GBPCNY-中国银行现价动态</a></p>'.format(beijing_time(),url)
+    content = 'GBPCNY{}<p><a href="{}">GBPCNY-中国银行现价动态</a></p>'.format(beijing_time(),url)
     #content 内容设置
     html_img = f'<p>{content}<br><img src="cid:image1"></br></p>' # html格式添加图片
     email_server = 'smtp.qq.com'
